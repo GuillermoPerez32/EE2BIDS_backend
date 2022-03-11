@@ -1,5 +1,9 @@
 # import _thread
 import os
+import logging
+import asyncio
+import uvicorn
+from uvicorn.loops.asyncio import asyncio_setup
 os.environ['EVENTLET_NO_GREENDNS'] = 'yes'
 import eventlet
 from eventlet import tpool
@@ -21,49 +25,49 @@ lorisCredentials = {
 }
 
 # Create socket listener.
-sio = socketio.Server(async_mode='eventlet', cors_allowed_origins=[])
-app = socketio.WSGIApp(sio)
+# sio = socketio.Server(async_mode='eventlet', cors_allowed_origins=[])
+# app = socketio.WSGIApp(sio)
+
+sio = socketio.AsyncServer(async_mode = 'asgi')
+app = socketio.ASGIApp(sio, sio)
 
 # Create Loris API handler.
 loris_api = LorisAPI()
 
 
 @sio.event
-def connect(sid, environ):
-    print('connect: ', sid)
-    if environ['REMOTE_ADDR'] != '127.0.0.1':
-        return False  # extra precaution.
-
+async def connect(sid, environ):
+    logging.info(f'connect: {sid}')
 
 def tarfile_bids_thread(bids_directory):
     iEEG.TarFile(bids_directory)
     response = {
         'compression_time': 'example_5mins'
     }
-    return eventlet.tpool.Proxy(response)
+    return tpool.Proxy(response)
 
 
 @sio.event
-def tarfile_bids(sid, bids_directory):
-    response = eventlet.tpool.execute(tarfile_bids_thread, bids_directory)
+async def tarfile_bids(sid, bids_directory):
+    response = tpool.execute(tarfile_bids_thread, bids_directory)
     send = {
         'compression_time': response['compression_time']
     }
-    sio.emit('response', send)
+    sio.emit('response', send, sid)
 
 
 @sio.event
-def get_participant_data(sid, data):
+async def get_participant_data(sid, data):
     # todo helper to to data validation
     if 'candID' not in data or not data['candID']:
         return
 
     candidate = loris_api.get_candidate(data['candID'])
-    sio.emit('participant_data', candidate)
+    sio.emit('participant_data', candidate, sid)
 
 
 @sio.event
-def set_loris_credentials(sid, data):
+async def set_loris_credentials(sid, data):
     global lorisCredentials
     lorisCredentials = data
     if 'lorisURL' not in lorisCredentials:
@@ -78,37 +82,41 @@ def set_loris_credentials(sid, data):
     resp = loris_api.login()
 
     if resp.get('error'):
-        sio.emit('loris_login_response', {'error': resp.get('error')})
+        sio.emit('loris_login_response', {'error': resp.get('error')}, sid)
     else:
-        sio.emit('loris_login_response', {
+        sio.emit(
+        'loris_login_response', 
+        {
             'success': 200,
             'lorisUsername': loris_api.username
-        })
-        sio.emit('loris_sites', loris_api.get_sites())
-        sio.emit('loris_projects', loris_api.get_projects())
+        },sid
+        )
+
+        sio.emit('loris_sites', loris_api.get_sites(), sid)
+        sio.emit('loris_projects', loris_api.get_projects(), sid)
 
 
 def get_loris_sites(sid):
-    sio.emit('loris_sites', loris_api.get_sites())
+    sio.emit('loris_sites', loris_api.get_sites(), sid)
 
 
 @sio.event
-def get_loris_projects(sid):
-    sio.emit('loris_projects', loris_api.get_projects())
+async def get_loris_projects(sid):
+    sio.emit('loris_projects', loris_api.get_projects(), sid)
 
 
 @sio.event
-def get_loris_subprojects(sid, project):
-    sio.emit('loris_subprojects', loris_api.get_subprojects(project))
+async def get_loris_subprojects(sid, project):
+    sio.emit('loris_subprojects', loris_api.get_subprojects(project), sid)
 
 
 @sio.event
-def get_loris_visits(sid, subproject):
-    sio.emit('loris_visits', loris_api.get_visits(subproject))
+async def get_loris_visits(sid, subproject):
+    sio.emit('loris_visits', loris_api.get_visits(subproject), sid)
 
 
 @sio.event
-def create_visit(sid, data):
+async def create_visit(sid, data):
     loris_api.create_visit(
     data['candID'],
     data['visit'],
@@ -127,7 +135,7 @@ def create_visit(sid, data):
     )
 
 @sio.event
-def create_candidate_and_visit(sid, data):
+async def create_candidate_and_visit(sid, data):
     new_candidate = loris_api.create_candidate(
         data['project'],
         data['dob'],
@@ -144,11 +152,11 @@ def create_candidate_and_visit(sid, data):
                                 data['project'], data['date'])
 
         print('new_candidate_created')
-        sio.emit('new_candidate_created', new_candidate)
+        sio.emit('new_candidate_created', new_candidate, sid)
 
 
 @sio.event
-def get_edf_data(sid, data):
+async def get_edf_data(sid, data):
     # data = { files: 'EDF files (array of {path, name})' }
     print('get_edf_data:', data)
 
@@ -156,7 +164,7 @@ def get_edf_data(sid, data):
         msg = 'No EDF file selected.'
         print(msg)
         response = {'error': msg}
-        sio.emit('edf_data', response)
+        sio.emit('edf_data', response, sid)
         return
 
     headers = []
@@ -166,7 +174,7 @@ def get_edf_data(sid, data):
             metadata = anonymize.get_header()
             year = '20' + str(metadata[0]['year']) if metadata[0]['year'] < 85 else '19' + str(metadata[0]['year'])
             date = datetime.datetime(int(year), metadata[0]['month'], metadata[0]['day'], metadata[0]['hour'],
-                                     metadata[0]['minute'], metadata[0]['second'])
+                                    metadata[0]['minute'], metadata[0]['second'])
 
             headers.append({
                 'file': file,
@@ -181,7 +189,7 @@ def get_edf_data(sid, data):
                 response = {
                     'error': msg,
                 }
-                sio.emit('edf_data', response)
+                sio.emit('edf_data', response, sid)
                 return
 
         # sort the recording per date
@@ -205,11 +213,11 @@ def get_edf_data(sid, data):
         response = {
             'error': 'Failed to retrieve EDF header information',
         }
-    sio.emit('edf_data', response)
+    sio.emit('edf_data', response, sid)
 
 
 @sio.event
-def get_bids_metadata(sid, data):
+async def get_bids_metadata(sid, data):
     # data = { file_path: 'path to metadata file' }
     print('data:', data)
 
@@ -247,7 +255,7 @@ def get_bids_metadata(sid, data):
                 'error': msg,
             }
 
-    sio.emit('bids_metadata', response)
+    sio.emit('bids_metadata', response, sid)
 
 
 def edf_to_bids_thread(data):
@@ -274,7 +282,7 @@ def edf_to_bids_thread(data):
             response = {
                 'output_time': data['output_time']
             }
-            return eventlet.tpool.Proxy(response)
+            return tpool.Proxy(response)
         except ReadError as e:
             error_messages.append('Cannot read file - ' + str(e))
         except WriteError as e:
@@ -283,23 +291,23 @@ def edf_to_bids_thread(data):
         response = {
             'error': error_messages
         }
-    return eventlet.tpool.Proxy(response)
+    return tpool.Proxy(response)
 
 
 @sio.event
-def edf_to_bids(sid, data):
+async def edf_to_bids(sid, data):
     # data = { file_paths: [], bids_directory: '', read_only: false,
     # event_files: '', line_freq: '', site_id: '', project_id: '',
     # sub_project_id: '', session: '', subject_id: ''}
     print('edf_to_bids: ', data)
-    response = eventlet.tpool.execute(edf_to_bids_thread, data)
+    response = tpool.execute(edf_to_bids_thread, data)
     print(response)
     print('Response received!')
-    sio.emit('bids', response.copy())
+    sio.emit('bids', response.copy(), sid)
 
 
 @sio.event
-def validate_bids(sid, bids_directory):
+async def validate_bids(sid, bids_directory):
     print('validate_bids: ', bids_directory)
     error_messages = []
     if not bids_directory:
@@ -315,17 +323,37 @@ def validate_bids(sid, bids_directory):
         response = {
             'error': error_messages
         }
-    sio.emit('response', response)
+    sio.emit('response', response, sid)
 
 
 @sio.event
-def disconnect(sid):
+async def disconnect(sid):
     print('disconnect: ', sid)
 
+async def start_uvicorn():
+    config = uvicorn.config.Config(app, host='0.0.0.0', port=7301)
+    server = uvicorn.server.Server(config)
+    await server.serve()
+
+# Set up the event loop
+async def start_background_task():
+    while True:
+        logging.info(f"Background tasks that ticks every 10s.")
+        await sio.sleep(10.0)
+
+async def main(loop):
+    await asyncio.wait([
+        asyncio.create_task(start_uvicorn()),
+        # asyncio.create_task(start_background_task()),
+    ], return_when=asyncio.FIRST_COMPLETED)
 
 if __name__ == '__main__':
-    eventlet.wsgi.server(
-        eventlet.listen(('127.0.0.1', 7301)),
-        app,
-        log_output=True
-    )
+    # eventlet.wsgi.server(
+    #     eventlet.listen(('127.0.0.1', 7301)),
+    #     app,
+    #     log_output=True
+    # )
+
+    asyncio_setup();
+    loop = asyncio.get_event_loop();
+    uvicorn.run(main(loop),port=7301)

@@ -84,7 +84,7 @@ class EdfSubjectId:
             sex = 'X'
         if sex not in ('M', 'F', 'X'):
             error = ("'sex' can only be 'M' (male), 'F' (female), or" +
-                     " 'X' (unknown)")
+                    " 'X' (unknown)")
             raise ValueError(error)
         self._sex = sex
 
