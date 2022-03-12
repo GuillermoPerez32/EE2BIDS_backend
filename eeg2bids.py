@@ -28,8 +28,8 @@ lorisCredentials = {
 # sio = socketio.Server(async_mode='eventlet', cors_allowed_origins=[])
 # app = socketio.WSGIApp(sio)
 
-sio = socketio.AsyncServer(async_mode = 'asgi')
-app = socketio.ASGIApp(sio, sio)
+sio = socketio.AsyncServer(async_mode = 'asgi', cors_allowed_origins=[])
+app = socketio.ASGIApp(sio)
 
 # Create Loris API handler.
 loris_api = LorisAPI()
@@ -37,7 +37,7 @@ loris_api = LorisAPI()
 
 @sio.event
 async def connect(sid, environ):
-    logging.info(f'connect: {sid}')
+    print(f'connect: {sid}')
 
 def tarfile_bids_thread(bids_directory):
     iEEG.TarFile(bids_directory)
@@ -53,7 +53,7 @@ async def tarfile_bids(sid, bids_directory):
     send = {
         'compression_time': response['compression_time']
     }
-    sio.emit('response', send, sid)
+    await sio.emit('response', send, sid)
 
 
 @sio.event
@@ -63,7 +63,7 @@ async def get_participant_data(sid, data):
         return
 
     candidate = loris_api.get_candidate(data['candID'])
-    sio.emit('participant_data', candidate, sid)
+    await sio.emit('participant_data', candidate, sid)
 
 
 @sio.event
@@ -82,9 +82,9 @@ async def set_loris_credentials(sid, data):
     resp = loris_api.login()
 
     if resp.get('error'):
-        sio.emit('loris_login_response', {'error': resp.get('error')}, sid)
+        await sio.emit('loris_login_response', {'error': resp.get('error')}, sid)
     else:
-        sio.emit(
+        await sio.emit(
         'loris_login_response', 
         {
             'success': 200,
@@ -92,27 +92,28 @@ async def set_loris_credentials(sid, data):
         },sid
         )
 
-        sio.emit('loris_sites', loris_api.get_sites(), sid)
-        sio.emit('loris_projects', loris_api.get_projects(), sid)
+        await sio.emit('loris_sites', loris_api.get_sites(), sid)
+        await sio.emit('loris_projects', loris_api.get_projects(), sid)
 
 
-def get_loris_sites(sid):
-    sio.emit('loris_sites', loris_api.get_sites(), sid)
+@sio.event
+async def get_loris_sites(sid):
+    await sio.emit('loris_sites', loris_api.get_sites(), sid)
 
 
 @sio.event
 async def get_loris_projects(sid):
-    sio.emit('loris_projects', loris_api.get_projects(), sid)
+    await sio.emit('loris_projects', loris_api.get_projects(), sid)
 
 
 @sio.event
 async def get_loris_subprojects(sid, project):
-    sio.emit('loris_subprojects', loris_api.get_subprojects(project), sid)
+    await sio.emit('loris_subprojects', loris_api.get_subprojects(project), sid)
 
 
 @sio.event
 async def get_loris_visits(sid, subproject):
-    sio.emit('loris_visits', loris_api.get_visits(subproject), sid)
+    await sio.emit('loris_visits', loris_api.get_visits(subproject), sid)
 
 
 @sio.event
@@ -152,7 +153,7 @@ async def create_candidate_and_visit(sid, data):
                                 data['project'], data['date'])
 
         print('new_candidate_created')
-        sio.emit('new_candidate_created', new_candidate, sid)
+        await sio.emit('new_candidate_created', new_candidate, sid)
 
 
 @sio.event
@@ -164,7 +165,7 @@ async def get_edf_data(sid, data):
         msg = 'No EDF file selected.'
         print(msg)
         response = {'error': msg}
-        sio.emit('edf_data', response, sid)
+        await sio.emit('edf_data', response, sid)
         return
 
     headers = []
@@ -189,7 +190,7 @@ async def get_edf_data(sid, data):
                 response = {
                     'error': msg,
                 }
-                sio.emit('edf_data', response, sid)
+                await sio.emit('edf_data', response, sid)
                 return
 
         # sort the recording per date
@@ -213,7 +214,7 @@ async def get_edf_data(sid, data):
         response = {
             'error': 'Failed to retrieve EDF header information',
         }
-    sio.emit('edf_data', response, sid)
+    await sio.emit('edf_data', response, sid)
 
 
 @sio.event
@@ -255,7 +256,7 @@ async def get_bids_metadata(sid, data):
                 'error': msg,
             }
 
-    sio.emit('bids_metadata', response, sid)
+    await sio.emit('bids_metadata', response, sid)
 
 
 def edf_to_bids_thread(data):
@@ -303,7 +304,7 @@ async def edf_to_bids(sid, data):
     response = tpool.execute(edf_to_bids_thread, data)
     print(response)
     print('Response received!')
-    sio.emit('bids', response.copy(), sid)
+    await sio.emit('bids', response.copy(), sid)
 
 
 @sio.event
@@ -323,37 +324,37 @@ async def validate_bids(sid, bids_directory):
         response = {
             'error': error_messages
         }
-    sio.emit('response', response, sid)
+    await sio.emit('response', response, sid)
 
 
 @sio.event
 async def disconnect(sid):
     print('disconnect: ', sid)
 
-async def start_uvicorn():
-    config = uvicorn.config.Config(app, host='0.0.0.0', port=7301)
-    server = uvicorn.server.Server(config)
-    await server.serve()
+# async def start_uvicorn():
+#     config = uvicorn.config.Config(app, host='0.0.0.0', port=7301)
+#     server = uvicorn.server.Server(config)
+#     await server.serve()
 
-# Set up the event loop
-async def start_background_task():
-    while True:
-        logging.info(f"Background tasks that ticks every 10s.")
-        await sio.sleep(10.0)
+# # Set up the event loop
+# async def start_background_task():
+#     while True:
+#         logging.info(f"Background tasks that ticks every 10s.")
+#         await sio.sleep(10.0)
 
-async def main(loop):
-    await asyncio.wait([
-        asyncio.create_task(start_uvicorn()),
-        # asyncio.create_task(start_background_task()),
-    ], return_when=asyncio.FIRST_COMPLETED)
+# async def main(loop):
+#     await asyncio.wait([
+#         asyncio.create_task(start_uvicorn()),
+#         # asyncio.create_task(start_background_task()),
+#     ], return_when=asyncio.FIRST_COMPLETED)
 
-if __name__ == '__main__':
-    # eventlet.wsgi.server(
-    #     eventlet.listen(('127.0.0.1', 7301)),
-    #     app,
-    #     log_output=True
-    # )
+# if __name__ == '__main__':
+#     # eventlet.wsgi.server(
+#     #     eventlet.listen(('127.0.0.1', 7301)),
+#     #     app,
+#     #     log_output=True
+#     # )
 
-    asyncio_setup();
-    loop = asyncio.get_event_loop();
-    uvicorn.run(main(loop),port=7301)
+#     asyncio_setup();
+#     loop = asyncio.get_event_loop();
+    # uvicorn.run(main(loop))
