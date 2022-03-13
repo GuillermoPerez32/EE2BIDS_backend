@@ -1,28 +1,15 @@
 # import _thread
 import os
-import logging
-import asyncio
-import uvicorn
-from uvicorn.loops.asyncio import asyncio_setup
+import datetime
+import json
 os.environ['EVENTLET_NO_GREENDNS'] = 'yes'
-import eventlet
 from eventlet import tpool
 import socketio
 from libs import iEEG
 from libs.iEEG import ReadError, WriteError, metadata as metadata_fields
 from libs.Modifier import Modifier
 from libs import BIDS
-from libs.loris_api import LorisAPI
-import csv
-import datetime
-import json
-
-# LORIS credentials of user
-lorisCredentials = {
-    'lorisURL': '',
-    'lorisUsername': '',
-    'lorisPassword': '',
-}
+from libs import loris_api as la
 
 # Create socket listener.
 # sio = socketio.Server(async_mode='eventlet', cors_allowed_origins=[])
@@ -30,10 +17,6 @@ lorisCredentials = {
 
 sio = socketio.AsyncServer(async_mode = 'asgi', cors_allowed_origins=[])
 app = socketio.ASGIApp(sio)
-
-# Create Loris API handler.
-loris_api = LorisAPI()
-
 
 @sio.event
 async def connect(sid, environ):
@@ -61,100 +44,125 @@ async def get_participant_data(sid, data):
     # todo helper to to data validation
     if 'candID' not in data or not data['candID']:
         return
-
-    candidate = loris_api.get_candidate(data['candID'])
+    
+    async with sio.session(sid) as session:
+        candidate = la.get_candidate(data['candID'], session['lorisURL'], session['lorisToken'])
     await sio.emit('participant_data', candidate, sid)
 
 
 @sio.event
 async def set_loris_credentials(sid, data):
-    global lorisCredentials
-    lorisCredentials = data
-    if 'lorisURL' not in lorisCredentials:
+    if 'lorisURL' not in data:
         print('error with credentials:', data)
         return
 
-    if lorisCredentials['lorisURL'].endswith('/'):
-        lorisCredentials['lorisURL'] = lorisCredentials['lorisURL'][:-1]
-    loris_api.url = lorisCredentials['lorisURL'] + '/api/v0.0.4-dev/'
-    loris_api.username = lorisCredentials['lorisUsername']
-    loris_api.password = lorisCredentials['lorisPassword']
-    resp = loris_api.login()
+    if data['lorisURL'].endswith('/'):
+        data['lorisURL'] = data['lorisURL'][:-1]
+    url = data['lorisURL'] + '/api/v0.0.4-dev/'
+    username = data['lorisUsername']
+    password = data['lorisPassword']
+    resp = la.login(url, username, password)
+    token = resp['token']
 
     if resp.get('error'):
         await sio.emit('loris_login_response', {'error': resp.get('error')}, sid)
     else:
-        await sio.emit(
-        'loris_login_response', 
-        {
-            'success': 200,
-            'lorisUsername': loris_api.username
-        },sid
-        )
+        async with sio.session(sid) as session:
+            session['lorisURL'] = url
+            session['lorisUsername'] = username
+            session['lorisToken'] = resp['token']
 
-        await sio.emit('loris_sites', loris_api.get_sites(), sid)
-        await sio.emit('loris_projects', loris_api.get_projects(), sid)
+            await sio.emit(
+            'loris_login_response', 
+            {
+                'success': 200,
+                'lorisUsername': username
+            },sid
+            )
 
+            await sio.emit('loris_sites', la.get_sites(url, token), sid)
+            await sio.emit('loris_projects', la.get_projects(url, token), sid)
 
 @sio.event
 async def get_loris_sites(sid):
-    await sio.emit('loris_sites', loris_api.get_sites(), sid)
-
+    async with sio.session(sid) as session:
+        await sio.emit('loris_sites', la.get_sites(session['lorisURL'], session['lorisToken']), sid)
 
 @sio.event
 async def get_loris_projects(sid):
-    await sio.emit('loris_projects', loris_api.get_projects(), sid)
-
+    async with sio.session(sid) as session:
+        await sio.emit('loris_projects', la.get_projects(session['lorisURL'], session['lorisToken']), sid)
 
 @sio.event
 async def get_loris_subprojects(sid, project):
-    await sio.emit('loris_subprojects', loris_api.get_subprojects(project), sid)
-
+    async with sio.session(sid) as session:
+        await sio.emit('loris_subprojects', la.get_subprojects(project, session['lorisURL'], session['lorisToken']), sid)
 
 @sio.event
 async def get_loris_visits(sid, subproject):
-    await sio.emit('loris_visits', loris_api.get_visits(subproject), sid)
-
+    async with sio.session(sid) as session:
+        await sio.emit('loris_visits', la.get_visits(subproject, session['lorisURL'], session['lorisToken']), sid)
 
 @sio.event
 async def create_visit(sid, data):
-    loris_api.create_visit(
-    data['candID'],
-    data['visit'],
-    data['site'],
-    data['project'],
-    data['subproject']
-    )
-    
-    loris_api.start_next_stage(
-    data['candID'],
-    data['visit'],
-    data['site'],
-    data['subproject'],
-    data['project'],
-    data['date']
-    )
+    async with sio.session(sid) as session:
+        la.create_visit(
+        data['candID'],
+        data['visit'],
+        data['site'],
+        data['project'],
+        data['subproject'],
+        session['lorisURL'],
+        session['lorisToken']
+        )
+        
+        la.start_next_stage(
+        data['candID'],
+        data['visit'],
+        data['site'],
+        data['subproject'],
+        data['project'],
+        data['date'],
+        session['lorisURL'],
+        session['lorisToken']
+        )
 
 @sio.event
 async def create_candidate_and_visit(sid, data):
-    new_candidate = loris_api.create_candidate(
-        data['project'],
-        data['dob'],
-        data['sex'],
-        data['site'],
-    )
+    async with sio.session(sid) as session:
+        new_candidate = la.create_candidate(
+            data['project'],
+            data['dob'],
+            data['sex'],
+            data['site'],
+            session['lorisURL'],
+            session['lorisToken']
+        )
 
-    if new_candidate['CandID']:
-        print('create_visit')
-        loris_api.create_visit(new_candidate['CandID'], data['visit'], data['site'], data['project'],
-                            data['subproject'])
+        if new_candidate['CandID']:
+            print('create_visit')
+            
+            la.create_visit(new_candidate['CandID'],
+                data['visit'],
+                data['site'],
+                data['project'],
+                data['subproject'],
+                session['lorisURL'],    
+                session['lorisToken']   
+            )
 
-        loris_api.start_next_stage(new_candidate['CandID'], data['visit'], data['site'], data['subproject'],
-                                data['project'], data['date'])
+            la.start_next_stage(new_candidate['CandID'],
+                data['visit'],
+                data['site'],
+                data['subproject'],
+                data['project'],
+                data['date'],
+                session['lorisURL'],
+                session['lorisToken']
+            )
 
-        print('new_candidate_created')
-        await sio.emit('new_candidate_created', new_candidate, sid)
-
+            print('new_candidate_created')
+            await sio.emit('new_candidate_created', new_candidate, sid)
 
 @sio.event
 async def get_edf_data(sid, data):
@@ -216,7 +224,6 @@ async def get_edf_data(sid, data):
         }
     await sio.emit('edf_data', response, sid)
 
-
 @sio.event
 async def get_bids_metadata(sid, data):
     # data = { file_path: 'path to metadata file' }
@@ -258,7 +265,6 @@ async def get_bids_metadata(sid, data):
 
     await sio.emit('bids_metadata', response, sid)
 
-
 def edf_to_bids_thread(data):
     print('data is ')
     print(data)
@@ -294,7 +300,6 @@ def edf_to_bids_thread(data):
         }
     return tpool.Proxy(response)
 
-
 @sio.event
 async def edf_to_bids(sid, data):
     # data = { file_paths: [], bids_directory: '', read_only: false,
@@ -305,7 +310,6 @@ async def edf_to_bids(sid, data):
     print(response)
     print('Response received!')
     await sio.emit('bids', response.copy(), sid)
-
 
 @sio.event
 async def validate_bids(sid, bids_directory):
@@ -330,31 +334,3 @@ async def validate_bids(sid, bids_directory):
 @sio.event
 async def disconnect(sid):
     print('disconnect: ', sid)
-
-# async def start_uvicorn():
-#     config = uvicorn.config.Config(app, host='0.0.0.0', port=7301)
-#     server = uvicorn.server.Server(config)
-#     await server.serve()
-
-# # Set up the event loop
-# async def start_background_task():
-#     while True:
-#         logging.info(f"Background tasks that ticks every 10s.")
-#         await sio.sleep(10.0)
-
-# async def main(loop):
-#     await asyncio.wait([
-#         asyncio.create_task(start_uvicorn()),
-#         # asyncio.create_task(start_background_task()),
-#     ], return_when=asyncio.FIRST_COMPLETED)
-
-# if __name__ == '__main__':
-#     # eventlet.wsgi.server(
-#     #     eventlet.listen(('127.0.0.1', 7301)),
-#     #     app,
-#     #     log_output=True
-#     # )
-
-#     asyncio_setup();
-#     loop = asyncio.get_event_loop();
-    # uvicorn.run(main(loop))
