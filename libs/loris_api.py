@@ -2,10 +2,10 @@ import json
 import requests
 import urllib
 
-def login(url, username, password):
 
+def login(url, username, password):
     resp = requests.post(
-        url= url + 'login',
+        url=url + 'login',
         json={
             'username': username,
             'password': password
@@ -30,10 +30,11 @@ def login(url, username, password):
             login_succeeded = {'token': token}
     return login_succeeded
 
+
 def get_projects(url, token):
     print('get_projects has ran')
     resp = requests.get(
-        url= url + 'projects',
+        url=url + 'projects',
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         verify=False
     )
@@ -41,10 +42,11 @@ def get_projects(url, token):
     json_resp = json.loads(resp.content.decode('ascii'))
     return json_resp.get('Projects')
 
+
 def get_all_subprojects(url, token):
     print('get_all_subprojects has ran')
     resp = requests.get(
-        url= url + 'subprojects',
+        url=url + 'subprojects',
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         verify=False
     )
@@ -53,17 +55,19 @@ def get_all_subprojects(url, token):
     json_resp = json.loads(resp.content.decode('ascii'))
     return json_resp.get('Subprojects')
 
+
 def get_subprojects(project, url, token):
     print('get_subprojects has ran')
     project = get_project(project, url, token)
     print(project)
     return project.get('Subprojects')
 
+
 def get_visits(subproject, url, token):
     print('get_visits has ran')
     print('get_visits look here:')
     resp = requests.get(
-        url= url + 'subprojects/' + urllib.parse.quote(subproject),
+        url=url + 'subprojects/' + urllib.parse.quote(subproject),
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         verify=False
     )
@@ -73,10 +77,11 @@ def get_visits(subproject, url, token):
     print(json_resp)
     return json_resp.get('Visits')
 
+
 def get_sites(url, token):
     print('get_sites has ran')
     resp = requests.get(
-        url= url + 'sites',
+        url=url + 'sites',
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         verify=False
     )
@@ -84,14 +89,15 @@ def get_sites(url, token):
     print(resp)
 
     json_resp = json.loads(resp.content.decode('ascii'))
-    print (json_resp)
+    print(json_resp)
     sites = json_resp.get('Sites')
     return sites
+
 
 def get_project(project, url, token):
     print('get_project has ran')
     resp = requests.get(
-        url= url + 'projects/' + urllib.parse.quote(project),
+        url=url + 'projects/' + urllib.parse.quote(project),
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         verify=False
     )
@@ -100,10 +106,11 @@ def get_project(project, url, token):
     json_resp = json.loads(resp.content.decode('ascii'))
     return json_resp
 
-def get_visit(candid, visit, site, subproject, project, url , token):
+
+def get_visit(candid, visit, site, subproject, project, url, token):
     print('get_visit has ran')
     resp = requests.get(
-        url= url + '/candidates/' + str(candid) + '/' + urllib.parse.quote(visit),
+        url=url + '/candidates/' + str(candid) + '/' + urllib.parse.quote(visit),
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         data=json.dumps({
             "Meta": {
@@ -122,10 +129,11 @@ def get_visit(candid, visit, site, subproject, project, url , token):
     json_resp = json.loads(resp.content.decode('ascii'))
     return json_resp
 
+
 def start_next_stage(candid, visit, site, subproject, project, date, url, token):
     print('start_next_stage has ran')
     resp = requests.patch(
-        url= url + '/candidates/' + str(candid) + '/' + urllib.parse.quote(visit),
+        url=url + '/candidates/' + str(candid) + '/' + urllib.parse.quote(visit),
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         data=json.dumps({
             "CandID": candid,
@@ -147,10 +155,11 @@ def start_next_stage(candid, visit, site, subproject, project, date, url, token)
     print('resp.text:')
     print(resp.text)
 
+
 def create_candidate(project, dob, sex, site, url, token):
     print('create_candidate has ran')
     resp = requests.post(
-        url= url + '/candidates/',
+        url=url + '/candidates/',
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         data=json.dumps({
             "Candidate": {
@@ -168,10 +177,11 @@ def create_candidate(project, dob, sex, site, url, token):
     print(json_resp)
     return json_resp
 
+
 def create_visit(candid, visit, site, project, subproject, url, token):
     print('create_visit has ran')
     resp = requests.put(
-        url= url + '/candidates/' + candid + '/' + visit,
+        url=url + '/candidates/' + candid + '/' + visit,
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         data=json.dumps({
             "CandID": candid,
@@ -187,10 +197,11 @@ def create_visit(candid, visit, site, project, subproject, url, token):
     # json_resp = json.loads(resp.content.decode('ascii'))
     # print(json_resp)
 
+
 def get_candidate(candid, url, token):
     print('get_candidate has ran')
     resp = requests.get(
-        url= url + '/candidates/' + candid,
+        url=url + '/candidates/' + candid,
         headers={'Authorization': 'Bearer %s' % token, 'LORIS-Overwrite': 'overwrite'},
         verify=False
     )

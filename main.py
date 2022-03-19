@@ -2,6 +2,7 @@
 import os
 import datetime
 import json
+
 os.environ['EVENTLET_NO_GREENDNS'] = 'yes'
 from eventlet import tpool
 import socketio
@@ -15,12 +16,14 @@ from libs import loris_api as la
 # sio = socketio.Server(async_mode='eventlet', cors_allowed_origins=[])
 # app = socketio.WSGIApp(sio)
 
-sio = socketio.AsyncServer(async_mode = 'asgi', cors_allowed_origins=[])
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=[])
 app = socketio.ASGIApp(sio)
+
 
 @sio.event
 async def connect(sid, environ):
     print(f'connect: {sid}')
+
 
 def tarfile_bids_thread(bids_directory):
     iEEG.TarFile(bids_directory)
@@ -44,7 +47,7 @@ async def get_participant_data(sid, data):
     # todo helper to to data validation
     if 'candID' not in data or not data['candID']:
         return
-    
+
     async with sio.session(sid) as session:
         candidate = la.get_candidate(data['candID'], session['lorisURL'], session['lorisToken'])
     await sio.emit('participant_data', candidate, sid)
@@ -73,59 +76,66 @@ async def set_loris_credentials(sid, data):
             session['lorisToken'] = resp['token']
 
             await sio.emit(
-            'loris_login_response', 
-            {
-                'success': 200,
-                'lorisUsername': username
-            },sid
+                'loris_login_response',
+                {
+                    'success': 200,
+                    'lorisUsername': username
+                }, sid
             )
 
             await sio.emit('loris_sites', la.get_sites(url, token), sid)
             await sio.emit('loris_projects', la.get_projects(url, token), sid)
+
 
 @sio.event
 async def get_loris_sites(sid):
     async with sio.session(sid) as session:
         await sio.emit('loris_sites', la.get_sites(session['lorisURL'], session['lorisToken']), sid)
 
+
 @sio.event
 async def get_loris_projects(sid):
     async with sio.session(sid) as session:
         await sio.emit('loris_projects', la.get_projects(session['lorisURL'], session['lorisToken']), sid)
 
+
 @sio.event
 async def get_loris_subprojects(sid, project):
     async with sio.session(sid) as session:
-        await sio.emit('loris_subprojects', la.get_subprojects(project, session['lorisURL'], session['lorisToken']), sid)
+        await sio.emit('loris_subprojects', la.get_subprojects(project, session['lorisURL'], session['lorisToken']),
+                       sid)
+
 
 @sio.event
 async def get_loris_visits(sid, subproject):
     async with sio.session(sid) as session:
         await sio.emit('loris_visits', la.get_visits(subproject, session['lorisURL'], session['lorisToken']), sid)
 
+
 @sio.event
 async def create_visit(sid, data):
     async with sio.session(sid) as session:
         la.create_visit(
-        data['candID'],
-        data['visit'],
-        data['site'],
-        data['project'],
-        data['subproject'],
-        session['lorisURL'],
-        session['lorisToken']
+            data['candID'],
+            data['visit'],
+            data['site'],
+            data['project'],
+            data['subproject'],
+            session['lorisURL'],
+            session['lorisToken']
         )
-        
+
         la.start_next_stage(
-        data['candID'],
-        data['visit'],
-        data['site'],
-        data['subproject'],
-        data['project'],
-        data['date'],
-        session['lorisURL'],
-        session['lorisToken']
+            data['candID'],
+            data['visit'],
+            data['site'],
+            data['subproject'],
+            data['project'],
+            data['date'],
+            session['lorisURL'],
+            session['lorisToken']
         )
+
 
 @sio.event
 async def create_candidate_and_visit(sid, data):
@@ -141,28 +151,29 @@ async def create_candidate_and_visit(sid, data):
 
         if new_candidate['CandID']:
             print('create_visit')
-            
+
             la.create_visit(new_candidate['CandID'],
-                data['visit'],
-                data['site'],
-                data['project'],
-                data['subproject'],
-                session['lorisURL'],    
-                session['lorisToken']   
-            )
+                            data['visit'],
+                            data['site'],
+                            data['project'],
+                            data['subproject'],
+                            session['lorisURL'],
+                            session['lorisToken']
+                            )
 
             la.start_next_stage(new_candidate['CandID'],
-                data['visit'],
-                data['site'],
-                data['subproject'],
-                data['project'],
-                data['date'],
-                session['lorisURL'],
-                session['lorisToken']
-            )
+                                data['visit'],
+                                data['site'],
+                                data['subproject'],
+                                data['project'],
+                                data['date'],
+                                session['lorisURL'],
+                                session['lorisToken']
+                                )
 
             print('new_candidate_created')
             await sio.emit('new_candidate_created', new_candidate, sid)
+
 
 @sio.event
 async def get_edf_data(sid, data):
@@ -183,7 +194,7 @@ async def get_edf_data(sid, data):
             metadata = anonymize.get_header()
             year = '20' + str(metadata[0]['year']) if metadata[0]['year'] < 85 else '19' + str(metadata[0]['year'])
             date = datetime.datetime(int(year), metadata[0]['month'], metadata[0]['day'], metadata[0]['hour'],
-                                    metadata[0]['minute'], metadata[0]['second'])
+                                     metadata[0]['minute'], metadata[0]['second'])
 
             headers.append({
                 'file': file,
@@ -223,6 +234,7 @@ async def get_edf_data(sid, data):
             'error': 'Failed to retrieve EDF header information',
         }
     await sio.emit('edf_data', response, sid)
+
 
 @sio.event
 async def get_bids_metadata(sid, data):
@@ -265,6 +277,7 @@ async def get_bids_metadata(sid, data):
 
     await sio.emit('bids_metadata', response, sid)
 
+
 def edf_to_bids_thread(data):
     print('data is ')
     print(data)
@@ -300,6 +313,7 @@ def edf_to_bids_thread(data):
         }
     return tpool.Proxy(response)
 
+
 @sio.event
 async def edf_to_bids(sid, data):
     # data = { file_paths: [], bids_directory: '', read_only: false,
@@ -310,6 +324,7 @@ async def edf_to_bids(sid, data):
     print(response)
     print('Response received!')
     await sio.emit('bids', response.copy(), sid)
+
 
 @sio.event
 async def validate_bids(sid, bids_directory):
