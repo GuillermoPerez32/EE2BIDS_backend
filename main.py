@@ -29,6 +29,7 @@ async def connect(sid, environ):
 
 
 def tarfile_bids_thread(bids_directory):
+    # USELESS: THE FRONTEND MUST SEND COMPRESSED FILES
     tar = iEEG.tarFile(bids_directory)
     response = {
         'compression_time': 'example_5mins',
@@ -38,9 +39,10 @@ def tarfile_bids_thread(bids_directory):
 
 
 @sio.event
-async def tarfile_bids(sid, bids_directory):
+async def tarfile_bids(sid, bids_compressed):
+    # USELESS: THE FRONTEND MUST SEND COMPRESSED FILES
     print('Packaging BIDS')
-    response = tpool.execute(tarfile_bids_thread, bids_directory)
+    response = tpool.execute(tarfile_bids_thread, bids_compressed)
     send = {
         'compression_time': response['compression_time'],
         'file': response['file']
@@ -51,7 +53,7 @@ async def tarfile_bids(sid, bids_directory):
 
 @sio.event
 async def get_participant_data(sid, data):
-    # todo helper to to data validation
+    # TODO: The endpoint must recieve a file
     if 'candID' not in data or not data['candID']:
         return
 
@@ -298,6 +300,8 @@ def edf_to_bids_thread(data):
         error_messages.append('The BIDS output folder is missing.')
     if not data['session']:
         error_messages.append('The LORIS Visit Label is missing.')
+
+    response = dict()
 
     if not error_messages:
         time = iEEG.Time()

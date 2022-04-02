@@ -1,5 +1,4 @@
 import os
-import pathlib
 import tarfile
 import base64
 import shutil
