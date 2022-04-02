@@ -11,10 +11,13 @@ from libs.iEEG import ReadError, WriteError, metadata as metadata_fields
 from libs.Modifier import Modifier
 from libs import BIDS
 from libs import loris_api as la
+from libs import utils
 
 # Create socket listener.
 # sio = socketio.Server(async_mode='eventlet', cors_allowed_origins=[])
 # app = socketio.WSGIApp(sio)
+
+utils.clear_temp_file()
 
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=[])
 app = socketio.ASGIApp(sio)
@@ -26,19 +29,23 @@ async def connect(sid, environ):
 
 
 def tarfile_bids_thread(bids_directory):
-    iEEG.TarFile(bids_directory)
+    tar = iEEG.tarFile(bids_directory)
     response = {
-        'compression_time': 'example_5mins'
+        'compression_time': 'example_5mins',
+        'file': tar.__str__()
     }
     return tpool.Proxy(response)
 
 
 @sio.event
 async def tarfile_bids(sid, bids_directory):
+    print('Packaging BIDS')
     response = tpool.execute(tarfile_bids_thread, bids_directory)
     send = {
-        'compression_time': response['compression_time']
+        'compression_time': response['compression_time'],
+        'file': response['file']
     }
+    print(f'compressed file for: {sid}')
     await sio.emit('response', send, sid)
 
 
@@ -177,6 +184,8 @@ async def create_candidate_and_visit(sid, data):
 
 @sio.event
 async def get_edf_data(sid, data):
+    #TODO: The endpoint must recieve a file
+
     # data = { files: 'EDF files (array of {path, name})' }
     print('get_edf_data:', data)
 
@@ -238,6 +247,7 @@ async def get_edf_data(sid, data):
 
 @sio.event
 async def get_bids_metadata(sid, data):
+    # TODO: The endpoint must recieve a file
     # data = { file_path: 'path to metadata file' }
     print('data:', data)
 
@@ -294,10 +304,10 @@ def edf_to_bids_thread(data):
         data['output_time'] = 'output-' + time.latest_output
 
         try:
-            iEEG.Converter(data)  # EDF to BIDS format.
+            converter = iEEG.Converter(data)  # EDF to BIDS format.
 
             # store subject_id for Modifier
-            data['subject_id'] = iEEG.Converter.m_info['subject_id']
+            data['subject_id'] = converter.m_info['subject_id']
             Modifier(data)  # Modifies data of BIDS format
             response = {
                 'output_time': data['output_time']
@@ -334,10 +344,10 @@ async def validate_bids(sid, bids_directory):
         error_messages.append('The BIDS output directory is missing.')
 
     if not error_messages:
-        BIDS.Validate(bids_directory)
+        file_path, result = BIDS.validate(bids_directory)
         response = {
-            'file_paths': BIDS.Validate.file_paths,
-            'result': BIDS.Validate.result
+            'file_paths': file_path,
+            'result': result
         }
     else:
         response = {

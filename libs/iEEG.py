@@ -90,21 +90,12 @@ metadata = {
 
 
 # TarFile - tarfile the BIDS data.
-class TarFile:
-    def __init__(self, bids_directory):
-        import tarfile
-        output_filename = bids_directory + '.tar.gz'
-        with tarfile.open(output_filename, "w:gz") as tar:
-            tar.add(bids_directory, arcname=os.path.basename(bids_directory))
-
-        #import platform
-        #import subprocess
-        #if platform.system() == 'Windows':
-        #    os.startfile(data['bids_directory'])
-        #elif platform.system() == 'Darwin':
-        #    subprocess.Popen(['open', data['bids_directory']])
-        #else:
-        #    subprocess.Popen(['xdg-open', data['bids_directory']])
+def tarFile(bids_directory):
+    import tarfile
+    output_filename = bids_directory + '.tar.gz'
+    with tarfile.open(output_filename, "w:gz") as tar:
+        tar.add(bids_directory, arcname=os.path.basename(bids_directory))
+        return tar
 
 
 # Anonymize - scrubs edf header data.

@@ -5,6 +5,7 @@ import re
 import shutil
 from libs.iEEG import metadata as metadata_fields
 
+
 class Modifier:
     def __init__(self, data):
         self.data = data
@@ -19,7 +20,6 @@ class Modifier:
         self.copy_event_files()
         self.copy_annotation_files()
         self.modify_eeg_json()
-
 
     def get_bids_root_path(self):
         return os.path.join(
@@ -44,7 +44,6 @@ class Modifier:
             self.data['modality']
         )
 
-
     def clean_dataset_files(self):
         if len(self.data['edfData']['files']) > 0:
             # for multiple run recording, clean the duplicate _channels.tsv
@@ -68,11 +67,10 @@ class Modifier:
         except FileNotFoundError:
             print("No README file found")
 
-
     def modify_dataset_description_json(self):
         # EEG2BIDS Wizard version
         appVersion = 'unknown'
-        
+
         try:
             with open(os.path.join(os.path.dirname(__file__), '../../package.json'), "r") as fp:
                 file_data = json.load(fp)
@@ -98,7 +96,6 @@ class Modifier:
 
         except IOError:
             print("Could not read or write dataset_description.json file")
-
 
     def modify_participants_tsv(self):
         file_path = os.path.join(
@@ -152,7 +149,6 @@ class Modifier:
             writer.writerows(output)
             tsv_file.close()
 
-
     def modify_participants_json(self):
         file_path = os.path.join(
             self.get_bids_root_path(),
@@ -176,7 +172,6 @@ class Modifier:
             json_file.seek(0)
             json.dump(json_data, json_file, indent=4)
             json_file.close()
-
 
     def copy_annotation_files(self):
         file = os.path.join(
@@ -220,7 +215,6 @@ class Modifier:
                     eegRun['annotationsJSON'],
                     os.path.join(self.get_eeg_path(), filename + '.json')
                 )
-
 
     def copy_event_files(self):
         for eegRun in self.data.get('eegRuns'):
@@ -292,7 +286,6 @@ class Modifier:
                     writer.writerow(headers)
                     writer.writerows(output)
                     tsv_file.close()
-
 
     def modify_eeg_json(self):
         eeg_jsons = [f for f in os.listdir(self.get_eeg_path()) if f.endswith('eeg.json')]
